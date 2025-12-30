@@ -5,10 +5,133 @@
 // Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
 
 generator client {
-  provider = "prisma-client"
+  provider = "prisma-client-js"
   output   = "../src/generated/prisma"
 }
 
 datasource db {
   provider = "postgresql"
+}
+
+model Organization {
+  id String @id @default(uuid())
+  name String
+
+  instances ResourceInstance[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Resource {
+  id String @id @default(uuid())
+  key String @unique
+  name String
+
+  instances ResourceInstance[]
+  workflows Workflow[]
+}
+
+model Workflow {
+  id String @id @default(uuid())
+  resourceId String
+  name String
+
+  isActive Boolean @default(true)
+  resource Resource @relation(fields: [resourceId], references: [id])
+  states WorkflowState[]
+
+  createdAt DateTime @default(now())
+
+  @@index([resourceId])
+}
+
+model WorkflowState {
+  id String @id @default(uuid())
+  key String
+
+  workflowId String
+  isTerminal Boolean @default(false) //no further transitions in future
+  
+  workflow Workflow @relation(fields: [workflowId], references: [id])
+
+  incomingTransitions WorkflowTransition[] @relation("ToState")
+  outgoingTransitions WorkflowTransition[] @relation("FromState")
+
+  resourceInstances ResourceInstance[]
+
+  auditFromLogs AuditLog[] @relation("AuditFromState")
+  auditToLogs AuditLog[] @relation("AuditToState")
+
+  createdAt DateTime @default(now())
+
+  @@unique([workflowId, key])
+}
+
+model WorkflowTransition {
+  id String @id @default(uuid())
+  fromStateId String
+  toStateId String
+  actionKey String
+
+  fromState WorkflowState @relation("FromState", fields: [fromStateId], references: [id])
+  toState WorkflowState @relation("ToState", fields: [toStateId], references: [id])
+  policies Policy[]
+
+  createdAt DateTime @default(now())
+  @@unique([fromStateId, actionKey])
+}
+
+model ResourceInstance {
+  id String @id @default(uuid())
+
+  orgId String
+  resourceId String
+  currentStateId String
+
+  org Organization @relation(fields: [orgId], references: [id])
+  resource Resource @relation(fields: [resourceId], references: [id])
+  currentState WorkflowState @relation(fields: [currentStateId], references: [id])
+
+  metadata Json
+  auditLogs AuditLog[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([orgId])
+  @@index([resourceId])
+  @@index([currentStateId])
+}
+
+model Policy {
+  id String @id @default(uuid())
+
+  transitionId String
+  type String
+  config Json //contains Role -> condition -> Access to allow/not : Data Driven Logic - Not Code Driven
+
+  transition WorkflowTransition @relation(fields: [transitionId], references: [id])
+  createdAt DateTime @default(now())
+
+  @@index([transitionId])
+}
+
+model AuditLog {
+  id String @id @default(uuid())
+
+  resourceInstanceId String
+  fromStateId String
+  toStateId String
+  actionKey String
+  actorId String // A user, bot, service account, etc
+
+  resourceInstance ResourceInstance @relation(fields: [resourceInstanceId], references: [id])
+  fromState WorkflowState @relation("AuditFromState", fields: [fromStateId], references: [id])
+  toState WorkflowState @relation("AuditToState", fields: [toStateId], references: [id])
+
+  createdAt DateTime @default(now())
+  @@index([resourceInstanceId])
+  @@index([fromStateId])
+  @@index([toStateId])
 }
